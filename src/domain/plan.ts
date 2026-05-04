@@ -1,0 +1,417 @@
+import { deleteFile, getPaths, listDirs, listFiles, readMarkdown, writeMarkdown } from "../vault/vault-io.js";
+import { ensureDir, fileExists } from "../vault/atomic-write.js";
+import { localDateSlug, nowIso } from "../utils/time.js";
+import { planSlugFromTitle, taskIdFromIndex } from "../utils/slug.js";
+import { breakdownPlan } from "../utils/breakdown.js";
+import { PlanFrontmatter, PlanStatus } from "../schemas/plan.js";
+import { TaskFrontmatter } from "../schemas/task.js";
+import type { Config } from "../config.js";
+import { logEvent } from "./audit.js";
+
+export interface CreatePlanInput {
+  projectSlug: string;
+  title: string;
+  content: string;
+  tags?: string[];
+}
+
+export interface CreatePlanResult {
+  plan: PlanFrontmatter;
+  taskIds: string[];
+  strategy: string;
+  warning?: string;
+}
+
+async function getActivePlanIds(projectSlug: string): Promise<string[]> {
+  const plansRoot = getPaths().plansDir(projectSlug);
+  const planDirs = await listDirs(plansRoot);
+  const active: string[] = [];
+  for (const id of planDirs) {
+    const parsed = await readMarkdown<PlanFrontmatter>(getPaths().planFile(projectSlug, id));
+    if (parsed?.data.status === "active") active.push(id);
+  }
+  return active;
+}
+
+export async function createPlan(input: CreatePlanInput, cfg: Config): Promise<CreatePlanResult> {
+  const { projectSlug, title, content } = input;
+  const datePrefix = localDateSlug(cfg.tz);
+  let planId = planSlugFromTitle(title, datePrefix);
+
+  // Collision guard: if plan-id already exists, append a numeric suffix.
+  const paths = getPaths();
+  let suffix = 1;
+  while (await fileExists(paths.planFile(projectSlug, planId))) {
+    suffix += 1;
+    planId = `${planSlugFromTitle(title, datePrefix)}-${suffix}`;
+  }
+
+  // Archive prior active plans (only one active at a time).
+  for (const prior of await getActivePlanIds(projectSlug)) {
+    await setPlanStatus(projectSlug, prior, "archived", "Superseded by new active plan");
+  }
+
+  const breakdown = breakdownPlan(content, {
+    smallThreshold: cfg.breakdown.small,
+    largeThreshold: cfg.breakdown.large,
+  });
+
+  const now = nowIso();
+  const planFm: PlanFrontmatter = {
+    id: planId,
+    title,
+    project: projectSlug,
+    status: "active",
+    created_at: now,
+    updated_at: now,
+    version: 1,
+    breakdown_strategy: breakdown.strategy,
+    tags: input.tags ?? [],
+  };
+
+  await ensureDir(paths.planDir(projectSlug, planId));
+  await ensureDir(paths.tasksDir(projectSlug, planId));
+  await ensureDir(paths.sessionsDir(projectSlug, planId));
+
+  const taskRefs: { id: string; title: string }[] = [];
+  for (let i = 0; i < breakdown.tasks.length; i++) {
+    const t = breakdown.tasks[i];
+    const taskId = taskIdFromIndex(i + 1, t.title);
+    const fm: TaskFrontmatter = {
+      id: taskId,
+      title: t.title,
+      project: projectSlug,
+      plan: planId,
+      status: "active",
+      session: null,
+      created_at: now,
+      updated_at: now,
+      started_at: null,
+      completed_at: null,
+      depends_on: [],
+      tags: [],
+      block_reason: null,
+      version: 1,
+      review_verdict: "none",
+      review_session: null,
+    };
+    const taskBody = [`# ${t.title}`, "", t.content || "_No content provided._"].join("\n");
+    await writeMarkdown(
+      paths.taskFile(projectSlug, planId, taskId),
+      fm as unknown as Record<string, unknown>,
+      taskBody,
+    );
+    taskRefs.push({ id: taskId, title: t.title });
+  }
+  const taskIds = taskRefs.map((t) => t.id);
+
+  const body = renderPlanBody({ title, taskRefs, warning: breakdown.warning });
+  await writeMarkdown(paths.planFile(projectSlug, planId), planFm as unknown as Record<string, unknown>, body);
+
+  await logEvent(projectSlug, planId, {
+    event: "plan.created",
+    entity: "plan",
+    entityId: planId,
+    payload: { title, taskCount: taskIds.length, strategy: breakdown.strategy },
+  });
+
+  return { plan: planFm, taskIds, strategy: breakdown.strategy, warning: breakdown.warning };
+}
+
+export async function getPlan(projectSlug: string, planId: string) {
+  return readMarkdown<PlanFrontmatter>(getPaths().planFile(projectSlug, planId));
+}
+
+export async function setPlanStatus(
+  projectSlug: string,
+  planId: string,
+  status: PlanStatus,
+  reason?: string,
+): Promise<void> {
+  const planFile = getPaths().planFile(projectSlug, planId);
+  const parsed = await readMarkdown<PlanFrontmatter>(planFile);
+  if (!parsed) throw new Error(`Plan not found: ${planId}`);
+  const next: PlanFrontmatter = {
+    ...parsed.data,
+    status,
+    updated_at: nowIso(),
+    version: parsed.data.version + 1,
+  };
+  await writeMarkdown(planFile, next as unknown as Record<string, unknown>, parsed.content);
+  await logEvent(projectSlug, planId, {
+    event: `plan.status.${status}`,
+    entity: "plan",
+    entityId: planId,
+    payload: reason ? { reason } : {},
+  });
+}
+
+export async function listPlans(
+  projectSlug: string,
+  filter?: { status?: PlanStatus },
+): Promise<PlanFrontmatter[]> {
+  const planDirs = await listDirs(getPaths().plansDir(projectSlug));
+  const out: PlanFrontmatter[] = [];
+  for (const id of planDirs) {
+    const parsed = await readMarkdown<PlanFrontmatter>(getPaths().planFile(projectSlug, id));
+    if (!parsed) continue;
+    if (filter?.status && parsed.data.status !== filter.status) continue;
+    out.push(parsed.data);
+  }
+  return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function getActivePlan(projectSlug: string): Promise<PlanFrontmatter | null> {
+  const active = await listPlans(projectSlug, { status: "active" });
+  return active[0] ?? null;
+}
+
+export function renderPlanBody(args: {
+  title: string;
+  taskRefs: { id: string; title: string }[];
+  warning?: string | null;
+  revisionNote?: string | null;
+}): string {
+  const lines: string[] = [`# ${args.title}`, ""];
+  if (args.taskRefs.length === 0) {
+    lines.push("_No tasks yet._");
+  } else {
+    lines.push(`Tasks (${args.taskRefs.length}):`);
+    args.taskRefs.forEach((t, i) => {
+      lines.push(`${i + 1}. [[${t.id}]] — ${t.title}`);
+    });
+  }
+  if (args.warning) {
+    lines.push("", `> ⚠️ ${args.warning}`);
+  }
+  if (args.revisionNote && args.revisionNote.trim().length > 0) {
+    lines.push("", "## Revision note", "", args.revisionNote.trim());
+  }
+  return lines.join("\n");
+}
+
+export interface AddTaskInput {
+  title: string;
+  content?: string;
+  dependsOn?: string[];
+  tags?: string[];
+}
+
+export interface AddTaskResult {
+  taskId: string;
+  fm: TaskFrontmatter;
+  taskIndex: number;
+}
+
+export async function addTask(
+  projectSlug: string,
+  planId: string,
+  input: AddTaskInput,
+): Promise<AddTaskResult> {
+  const paths = getPaths();
+
+  const files = (await listFiles(paths.tasksDir(projectSlug, planId), ".md")).slice().sort();
+  let maxIndex = 0;
+  for (const f of files) {
+    const m = f.match(/^(\d+)-/);
+    if (m) maxIndex = Math.max(maxIndex, parseInt(m[1], 10));
+  }
+  const taskIndex = maxIndex + 1;
+
+  const taskId = taskIdFromIndex(taskIndex, input.title);
+  const now = nowIso();
+
+  const fm: TaskFrontmatter = {
+    id: taskId,
+    title: input.title,
+    project: projectSlug,
+    plan: planId,
+    status: "active",
+    session: null,
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    depends_on: input.dependsOn ?? [],
+    tags: input.tags ?? [],
+    block_reason: null,
+    version: 1,
+    review_verdict: "none",
+    review_session: null,
+  };
+
+  const taskBody = [`# ${input.title}`, "", input.content || "_No content provided._"].join("\n");
+  await writeMarkdown(
+    paths.taskFile(projectSlug, planId, taskId),
+    fm as unknown as Record<string, unknown>,
+    taskBody,
+  );
+
+  // Rebuild plan.md TOC to include the new task
+  const taskRefs = await listTaskRefs(projectSlug, planId);
+  const planParsed = await readMarkdown<PlanFrontmatter>(paths.planFile(projectSlug, planId));
+  if (planParsed) {
+    const updatedPlanFm: PlanFrontmatter = {
+      ...planParsed.data,
+      updated_at: now,
+      version: planParsed.data.version + 1,
+    };
+    const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+    await writeMarkdown(
+      paths.planFile(projectSlug, planId),
+      updatedPlanFm as unknown as Record<string, unknown>,
+      body,
+    );
+  }
+
+  await logEvent(projectSlug, planId, {
+    event: "task.added",
+    entity: "task",
+    entityId: taskId,
+    payload: { title: input.title, index: taskIndex, depends_on: input.dependsOn ?? [] },
+  });
+
+  return { taskId, fm, taskIndex };
+}
+
+export async function deleteTask(
+  projectSlug: string,
+  planId: string,
+  taskId: string,
+): Promise<void> {
+  const paths = getPaths();
+  const filePath = paths.taskFile(projectSlug, planId, taskId);
+  const parsed = await readMarkdown<TaskFrontmatter>(filePath);
+  if (!parsed) throw new Error(`Task not found: ${taskId}`);
+
+  await deleteFile(filePath);
+
+  // Rebuild plan TOC — deleted file is already gone so listTaskRefs skips it
+  const planParsed = await readMarkdown<PlanFrontmatter>(paths.planFile(projectSlug, planId));
+  if (planParsed) {
+    const taskRefs = await listTaskRefs(projectSlug, planId);
+    const updatedPlanFm: PlanFrontmatter = {
+      ...planParsed.data,
+      updated_at: nowIso(),
+      version: planParsed.data.version + 1,
+    };
+    const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+    await writeMarkdown(
+      paths.planFile(projectSlug, planId),
+      updatedPlanFm as unknown as Record<string, unknown>,
+      body,
+    );
+  }
+
+  await logEvent(projectSlug, planId, {
+    event: "task.deleted",
+    entity: "task",
+    entityId: taskId,
+    payload: { title: parsed.data.title },
+  });
+}
+
+export interface EditTaskInput {
+  title?: string;
+  content?: string;
+  dependsOn?: string[];
+  tags?: string[];
+  expectedVersion?: number;
+}
+
+export async function editTask(
+  projectSlug: string,
+  planId: string,
+  taskId: string,
+  input: EditTaskInput,
+): Promise<TaskFrontmatter> {
+  const paths = getPaths();
+  const filePath = paths.taskFile(projectSlug, planId, taskId);
+  const parsed = await readMarkdown<TaskFrontmatter>(filePath);
+  if (!parsed) throw new Error(`Task not found: ${taskId}`);
+
+  const current = parsed.data;
+
+  if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
+    throw new Error(
+      `Stale write: expected version ${input.expectedVersion} but task is at version ${current.version}. Re-fetch and try again.`,
+    );
+  }
+
+  const now = nowIso();
+  const titleChanged = input.title !== undefined && input.title !== current.title;
+
+  const next: TaskFrontmatter = {
+    ...current,
+    title: input.title ?? current.title,
+    depends_on: input.dependsOn !== undefined ? input.dependsOn : current.depends_on,
+    tags: input.tags !== undefined ? input.tags : current.tags,
+    updated_at: now,
+    version: current.version + 1,
+  };
+
+  let nextBody: string;
+  if (input.content !== undefined) {
+    // Full content replacement — prefix with title heading if caller didn't include one
+    const heading = `# ${next.title}`;
+    nextBody = input.content.trimStart().startsWith("#")
+      ? input.content
+      : `${heading}\n\n${input.content}`;
+  } else if (titleChanged) {
+    // Title only — update the H1 line in the existing body
+    nextBody = parsed.content.replace(/^#[^\n]*/m, `# ${next.title}`);
+  } else {
+    nextBody = parsed.content;
+  }
+
+  await writeMarkdown(filePath, next as unknown as Record<string, unknown>, nextBody);
+
+  // Rebuild plan TOC only when the display title changed
+  if (titleChanged) {
+    const planParsed = await readMarkdown<PlanFrontmatter>(paths.planFile(projectSlug, planId));
+    if (planParsed) {
+      const taskRefs = await listTaskRefs(projectSlug, planId);
+      const updatedPlanFm: PlanFrontmatter = {
+        ...planParsed.data,
+        updated_at: now,
+        version: planParsed.data.version + 1,
+      };
+      const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+      await writeMarkdown(
+        paths.planFile(projectSlug, planId),
+        updatedPlanFm as unknown as Record<string, unknown>,
+        body,
+      );
+    }
+  }
+
+  await logEvent(projectSlug, planId, {
+    event: "task.edited",
+    entity: "task",
+    entityId: taskId,
+    payload: {
+      title_changed: titleChanged,
+      content_replaced: input.content !== undefined,
+      depends_on: next.depends_on,
+    },
+  });
+
+  return next;
+}
+
+export async function listTaskRefs(
+  projectSlug: string,
+  planId: string,
+): Promise<{ id: string; title: string }[]> {
+  const tasksDir = getPaths().tasksDir(projectSlug, planId);
+  const files = (await listFiles(tasksDir, ".md")).slice().sort();
+  const refs: { id: string; title: string }[] = [];
+  for (const fname of files) {
+    const parsed = await readMarkdown<TaskFrontmatter>(
+      getPaths().taskFile(projectSlug, planId, fname.replace(/\.md$/, "")),
+    );
+    if (!parsed) continue;
+    refs.push({ id: parsed.data.id, title: parsed.data.title });
+  }
+  return refs;
+}

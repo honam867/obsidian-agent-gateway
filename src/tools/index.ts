@@ -9,6 +9,7 @@ import { taskDeleteTool } from "./task-delete.js";
 import { taskUpdateTool } from "./task-update.js";
 import { taskCompleteTool } from "./task-complete.js";
 import { taskGetTool } from "./task-get.js";
+import { taskListTool } from "./task-list.js";
 import { reviewSubmitTool } from "./review-submit.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
@@ -25,6 +26,7 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     taskUpdateTool(ctx),
     taskCompleteTool(ctx),
     taskGetTool(ctx),
+    taskListTool(ctx),
     reviewSubmitTool(ctx),
   ];
 }

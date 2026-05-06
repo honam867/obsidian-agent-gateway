@@ -1,13 +1,14 @@
 import path from "node:path";
 import { z } from "zod";
 import { resolveOrRegisterProject } from "../domain/project.js";
-import { getActivePlan, listPlans } from "../domain/plan.js";
+import { getActivePlans, getPlanById } from "../domain/plan.js";
 import { listTasks } from "../domain/task.js";
-import { hoursBetween, isSameLocalDay, nowIso } from "../utils/time.js";
+import { hoursBetween, isSameLocalDay } from "../utils/time.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 const Input = z.object({
   cwd: z.string().min(1),
+  plan_id: z.string().optional(),
   agent: z
     .object({
       name: z.string().optional(),
@@ -22,7 +23,7 @@ export function agentBootTool(ctx: ToolContext): ToolDef {
   return {
     name: "agent_boot",
     description:
-      "Call this FIRST in every session. Resolves the project from the given cwd, auto-registers it if new, and returns the full working context: active plan, open / in-progress tasks, stale tasks (>24h), and recent audit events. Safe to cache the result for 5-10 minutes inside a CLI session.",
+      "Call this FIRST in every session. Resolves the project from the given cwd, auto-registers it if new, and returns the full working context: active plan, open / in-progress tasks, stale tasks (>24h), and recent audit events. Pass plan_id to pin a specific plan instead of auto-selecting the latest active one. Safe to cache the result for 5-10 minutes inside a CLI session.",
     annotations: {
       title: "Agent Boot",
       readOnlyHint: true,
@@ -36,6 +37,11 @@ export function agentBootTool(ctx: ToolContext): ToolDef {
           type: "string",
           description:
             "Absolute path to the project root (usually the CLI's current working directory).",
+        },
+        plan_id: {
+          type: "string",
+          description:
+            "Pin a specific plan by id instead of auto-selecting the latest active plan. Useful when multiple active plans exist or when you already know which plan to work on.",
         },
         agent: {
           type: "object",
@@ -54,11 +60,29 @@ export function agentBootTool(ctx: ToolContext): ToolDef {
       const input = Input.parse(raw);
       const project = await resolveOrRegisterProject(path.resolve(input.cwd));
 
-      const plan = await getActivePlan(project.slug);
+      const activePlans = await getActivePlans(project.slug);
+
+      let plan = activePlans[0] ?? null;
+      if (input.plan_id) {
+        const pinned = await getPlanById(project.slug, input.plan_id);
+        if (!pinned) {
+          return {
+            project,
+            active_plan: null,
+            error: `Plan not found: ${input.plan_id}`,
+            hints: [`plan_id '${input.plan_id}' does not exist. Call plan_list to see available plans.`],
+            cache_until: addMinutes(1),
+            tz: ctx.config.tz,
+          };
+        }
+        plan = pinned;
+      }
+
       if (!plan) {
         return {
           project,
           active_plan: null,
+          multiple_active_plans: [],
           my_active_tasks: [],
           open_tasks: [],
           in_progress_tasks: [],
@@ -85,6 +109,17 @@ export function agentBootTool(ctx: ToolContext): ToolDef {
         .filter((t) => isSameLocalDay(t.updated_at, ctx.config.tz))
         .slice(0, 10);
 
+      const otherActivePlans = activePlans
+        .filter((p) => p.id !== plan!.id)
+        .map((p) => ({ id: p.id, title: p.title, created_at: p.created_at }));
+
+      const hints = buildHints({ open, inProgress, stale, mine, needsRevision });
+      if (otherActivePlans.length > 0) {
+        hints.unshift(
+          `${otherActivePlans.length + 1} active plans exist. Showing tasks for '${plan.id}'. Pass plan_id to agent_boot or use task_list to inspect another plan.`,
+        );
+      }
+
       return {
         project,
         active_plan: {
@@ -96,13 +131,14 @@ export function agentBootTool(ctx: ToolContext): ToolDef {
           updated_at: plan.updated_at,
           task_counts: countsByStatus(allTasks),
         },
+        multiple_active_plans: otherActivePlans.length > 0 ? otherActivePlans : undefined,
         my_active_tasks: mine,
         open_tasks: open,
         in_progress_tasks: inProgress,
         stale_tasks: stale,
         needs_revision: needsRevision,
         recent_activity: todayActivity,
-        hints: buildHints({ open, inProgress, stale, mine, needsRevision }),
+        hints,
         cache_until: addMinutes(5),
         tz: ctx.config.tz,
       };

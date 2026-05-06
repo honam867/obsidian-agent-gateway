@@ -146,6 +146,14 @@ export async function setPlanStatus(
   });
 }
 
+export async function getPlanById(
+  projectSlug: string,
+  planId: string,
+): Promise<PlanFrontmatter | null> {
+  const parsed = await readMarkdown<PlanFrontmatter>(getPaths().planFile(projectSlug, planId));
+  return parsed?.data ?? null;
+}
+
 export async function listPlans(
   projectSlug: string,
   filter?: { status?: PlanStatus },
@@ -158,12 +166,22 @@ export async function listPlans(
     if (filter?.status && parsed.data.status !== filter.status) continue;
     out.push(parsed.data);
   }
-  return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const toTs = (v: unknown): number => {
+    if (typeof v === "string") { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; }
+    if (v instanceof Date) return v.getTime();
+    if (typeof v === "number") return v;
+    return 0;
+  };
+  return out.sort((a, b) => toTs(b.created_at) - toTs(a.created_at));
 }
 
 export async function getActivePlan(projectSlug: string): Promise<PlanFrontmatter | null> {
   const active = await listPlans(projectSlug, { status: "active" });
   return active[0] ?? null;
+}
+
+export async function getActivePlans(projectSlug: string): Promise<PlanFrontmatter[]> {
+  return listPlans(projectSlug, { status: "active" });
 }
 
 export function renderPlanBody(args: {

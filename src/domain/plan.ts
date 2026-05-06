@@ -184,6 +184,38 @@ export async function getActivePlans(projectSlug: string): Promise<PlanFrontmatt
   return listPlans(projectSlug, { status: "active" });
 }
 
+/**
+ * Resolve which plan a task belongs to.
+ * If planId is given, use it directly (throws if not found).
+ * Otherwise try the latest active plan first, then search all active plans.
+ * This prevents "Task not found" when the task lives in a non-primary active plan.
+ */
+export async function resolveTaskPlan(
+  projectSlug: string,
+  taskId: string,
+  planId?: string,
+): Promise<string> {
+  if (planId) {
+    const plan = await getPlanById(projectSlug, planId);
+    if (!plan) throw new Error(`Plan not found: ${planId}`);
+    return planId;
+  }
+
+  const active = await getActivePlans(projectSlug);
+  if (active.length === 0) throw new Error("No active plan for project; pass plan_id explicitly.");
+
+  // Fast path: primary active plan
+  const { getTask } = await import("./task.js");
+  for (const plan of active) {
+    const task = await getTask(projectSlug, plan.id, taskId);
+    if (task) return plan.id;
+  }
+
+  throw new Error(
+    `Task not found: ${taskId}. It does not exist in any active plan. Pass plan_id explicitly if the task belongs to an archived or draft plan.`,
+  );
+}
+
 export function renderPlanBody(args: {
   title: string;
   taskRefs: { id: string; title: string }[];

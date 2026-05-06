@@ -1,7 +1,7 @@
 import path from "node:path";
 import { z } from "zod";
 import { resolveOrRegisterProject } from "../domain/project.js";
-import { getActivePlan } from "../domain/plan.js";
+import { resolveTaskPlan } from "../domain/plan.js";
 import { completeTask } from "../domain/task.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
@@ -35,12 +35,7 @@ export function taskCompleteTool(_ctx: ToolContext): ToolDef {
     handler: async (raw) => {
       const input = Input.parse(raw);
       const project = await resolveOrRegisterProject(path.resolve(input.cwd));
-      let planId = input.plan_id;
-      if (!planId) {
-        const plan = await getActivePlan(project.slug);
-        if (!plan) throw new Error("No active plan for project; pass plan_id explicitly.");
-        planId = plan.id;
-      }
+      const planId = await resolveTaskPlan(project.slug, input.task_id, input.plan_id);
       const task = await completeTask(project.slug, planId, input.task_id, input.summary, input.session);
       return { project, plan_id: planId, task };
     },

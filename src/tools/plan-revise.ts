@@ -46,7 +46,7 @@ export function planReviseTool(_ctx: ToolContext): ToolDef {
       };
       const taskRefs = await listTaskRefs(project.slug, input.plan_id);
       const body = renderPlanBody({
-        title: next.title,
+        plan: next,
         taskRefs,
         revisionNote: input.note ?? null,
       });

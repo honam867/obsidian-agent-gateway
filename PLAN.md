@@ -8,7 +8,7 @@ tasks live — those live in the Obsidian vault under `projects/obsidian-agent-g
 A **middleware gateway** so multiple CLI coding agents can work on the same project without
 stepping on each other. The gateway:
 - Uses an Obsidian vault as the single source of truth (human-readable markdown).
-- Exposes a minimal MCP surface (8 tools) so agents can read and mutate state without knowing
+- Exposes a compact MCP surface so agents can read and mutate state without knowing
   anything about the file layout.
 - Is opinionated about one thing only: there is exactly **one active plan per project at a time**.
 
@@ -19,7 +19,7 @@ stepping on each other. The gateway:
 | Vault path is fixed per user | User reads the vault in Obsidian; moving paths breaks muscle memory. |
 | Plan IDs are human-readable (`YYYY-MM-DD-slug`) | User greps by date. |
 | No review state in the state machine | User wants flexibility — review happens out-of-band. |
-| One MCP instance, multi-project | Simpler config, shared audit log. |
+| One MCP instance, multi-project | Simpler config and consistent graph-link rendering. |
 | No lease / lock | Complexity isn't worth it for local workflows; soft warnings are enough. |
 | No LLM calls inside the MCP | Deterministic, cheap, offline-friendly. |
 
@@ -30,7 +30,7 @@ stepping on each other. The gateway:
 - Automatic dependency ordering between tasks.
 - Automatic "who should do this" routing between CLIs.
 
-## Surface area (8 tools)
+## Surface area
 
 | Tool | Used by | Frequency |
 |---|---|---|
@@ -39,9 +39,15 @@ stepping on each other. The gateway:
 | `plan_revise` | planner | rare |
 | `plan_archive` | planner | rare |
 | `plan_list` | any | occasional |
+| `task_add` | planner / maintainer | scope expands mid-plan |
+| `task_edit` | planner / maintainer | task wording or metadata changes |
+| `task_delete` | planner / maintainer | rare cleanup of unwanted tasks |
 | `task_update` | coder | per task-status change |
 | `task_complete` | coder (via user slash) | per task completion |
 | `task_get` | coder | when acceptance body is needed |
+| `task_list` | any | inspect all tasks for one plan |
+| `review_submit` | reviewer | attach review feedback |
+| `project_relink` | maintainer | rebuild graph links / migrate legacy note names |
 
 ## State machine
 

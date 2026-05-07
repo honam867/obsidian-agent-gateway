@@ -109,7 +109,9 @@ If these aren't installed for your CLI, `slash-commands/` has install instructio
 
 ---
 
-## 8. Audit trail
+## 8. Graph-friendly vault notes
 
-Every mutation writes an event to `sessions/audit-YYYY-MM.jsonl` inside the plan folder.
-If the user asks "who did X and when", this is where to look (or they can grep in Obsidian).
+The vault is optimized for Obsidian graph view. Project and plan notes use meaningful filenames
+(`<project-slug>.md`, `<plan-id>.md`) so nodes are identifiable, and managed wikilink blocks are
+maintained by the MCP server. Do not hand-edit those managed blocks; use `project_relink` if graph
+links need to be rebuilt.

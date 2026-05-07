@@ -4,6 +4,7 @@ import { makeVaultPaths, VaultPaths } from "./paths.js";
 import { ensureDir, fileExists, readFileIfExists, writeAtomic } from "./atomic-write.js";
 import { parse, stringify } from "./frontmatter.js";
 import { log } from "../utils/logger.js";
+import { PLAN_STATUS_LINKS, TASK_STATUS_LINKS } from "../domain/obsidian-links.js";
 
 let paths: VaultPaths | null = null;
 
@@ -20,6 +21,7 @@ export async function initVault(vaultRoot: string): Promise<VaultPaths> {
     await ensureDir(dotObsidian);
     await writeAtomic(path.join(dotObsidian, "app.json"), "{}");
   }
+  await initGraphIndexNotes(paths);
   log.info(`Vault ready at ${paths.root}`);
   return paths;
 }
@@ -30,7 +32,7 @@ export function getPaths(): VaultPaths {
 }
 
 export async function readMarkdown<T = Record<string, unknown>>(filePath: string) {
-  const raw = await readFileIfExists(filePath);
+  const raw = (await readFileIfExists(filePath)) ?? (await readFileIfExists(legacyMarkdownPath(filePath)));
   if (raw === null) return null;
   return parse<T>(raw);
 }
@@ -67,4 +69,44 @@ export async function listFiles(dir: string, ext?: string): Promise<string[]> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
+}
+
+async function initGraphIndexNotes(vaultPaths: VaultPaths): Promise<void> {
+  const statusDir = path.join(vaultPaths.indexDir, "status");
+  for (const status of TASK_STATUS_LINKS) {
+    await writeIfMissing(
+      path.join(statusDir, `${status}.md`),
+      `# ${status}\n\nTask notes link here automatically through obsidian-agent-gateway.\n`,
+    );
+  }
+
+  const planStatusDir = path.join(vaultPaths.indexDir, "plan-status");
+  for (const status of PLAN_STATUS_LINKS) {
+    await writeIfMissing(
+      path.join(planStatusDir, `${status}.md`),
+      `# ${status}\n\nPlan notes link here automatically through obsidian-agent-gateway.\n`,
+    );
+  }
+}
+
+async function writeIfMissing(filePath: string, content: string): Promise<void> {
+  if (await fileExists(filePath)) return;
+  await writeAtomic(filePath, content);
+}
+
+function legacyMarkdownPath(filePath: string): string {
+  const dir = path.dirname(filePath);
+  const stem = path.basename(filePath, ".md");
+  const folder = path.basename(dir);
+  const parent = path.basename(path.dirname(dir));
+
+  if (stem === folder && parent === "projects") {
+    return path.join(dir, "project.md");
+  }
+
+  if (stem === folder && parent === "plans") {
+    return path.join(dir, "plan.md");
+  }
+
+  return filePath;
 }

@@ -22,7 +22,7 @@ humans and every agent sees the same picture.
        └───── MCP (stdio) ─┼────────────────────┘
                            │
                     ┌──────▼──────┐
-                    │  MCP Server │   ← 8 tools, state machine, audit log
+                    │  MCP Server │   ← tools, state machine, graph links
                     │  (Node.js)  │
                     └──────┬──────┘
                            │ atomic markdown writes
@@ -41,15 +41,13 @@ AgentGateway/                      ← the Obsidian vault (default: D:\working\A
 │   └── projects.json              ← slug → absolute path mapping
 └── projects/
     └── <project-slug>/            ← one folder per registered project
-        ├── project.md
+        ├── <project-slug>.md       ← graph-visible project hub
         └── plans/
             └── 2026-04-22-auth-refactor/
-                ├── plan.md        ← status: draft | active | archived
+                ├── 2026-04-22-auth-refactor.md
                 ├── tasks/
                 │   ├── 001-schema.md
                 │   └── 002-middleware.md
-                └── sessions/
-                    └── audit-2026-04.jsonl   ← rotated monthly
 ```
 
 ### Task state machine
@@ -153,8 +151,9 @@ Run the official MCP inspector:
 npm run inspect
 ```
 
-You should see 8 tools: `agent_boot`, `plan_create`, `plan_revise`, `plan_archive`, `plan_list`,
-`task_update`, `task_complete`, `task_get`.
+You should see the MCP tools: `agent_boot`, `plan_create`, `plan_revise`, `plan_archive`,
+`plan_list`, `task_add`, `task_edit`, `task_delete`, `task_update`, `task_complete`,
+`task_get`, `task_list`, `review_submit`, and `project_relink`.
 
 ### ChatGPT Apps local development
 
@@ -292,7 +291,8 @@ about the project — the MCP server figures it out from `cwd`.
 | Plan long but no headings | Server returns a warning; a single task is created. |
 | Plan active conflict | Creating a new active plan archives the previous one with reason `"Superseded by new active plan"`. |
 | CLI crashes mid-task | No lease — task simply stays `in_progress`. Stale tasks (>24h) surface in `agent_boot.stale_tasks`. |
-| Audit log growth | One JSONL file per month per plan, under `sessions/`. |
+| Obsidian graph labels | Project and plan notes use meaningful filenames (`<project-slug>.md`, `<plan-id>.md`) so graph nodes are identifiable. |
+| Legacy graph files | `project_relink` migrates old `project.md` / `plan.md` files and removes legacy `sessions/` folders. |
 
 ---
 
@@ -304,8 +304,8 @@ obsidian-agent-gateway/
 │   ├── index.ts             ← MCP entry point
 │   ├── server.ts            ← tool registration + stdio transport
 │   ├── config.ts
-│   ├── tools/               ← 8 MCP tools
-│   ├── domain/              ← project / plan / task / state-machine / audit
+│   ├── tools/               ← MCP tools
+│   ├── domain/              ← project / plan / task / state-machine / graph links
 │   ├── vault/               ← filesystem layer (atomic writes, frontmatter)
 │   ├── schemas/             ← zod schemas for frontmatter
 │   └── utils/               ← slug, breakdown, time, logger

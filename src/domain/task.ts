@@ -3,6 +3,7 @@ import { ReviewVerdict, TaskFrontmatter, TaskStatus } from "../schemas/task.js";
 import { assertTransition } from "./state-machine.js";
 import { nowIso } from "../utils/time.js";
 import { logEvent } from "./audit.js";
+import { upsertTaskLinks } from "./obsidian-links.js";
 
 export interface TaskRecord {
   fm: TaskFrontmatter;
@@ -105,7 +106,7 @@ export async function updateTask(
   await writeMarkdown(
     paths.taskFile(projectSlug, planId, taskId),
     next as unknown as Record<string, unknown>,
-    nextBody,
+    upsertTaskLinks(nextBody, next),
   );
 
   await logEvent(projectSlug, planId, {
@@ -197,7 +198,7 @@ export async function submitReview(
   await writeMarkdown(
     paths.taskFile(projectSlug, planId, taskId),
     next as unknown as Record<string, unknown>,
-    nextBody,
+    upsertTaskLinks(nextBody, next),
   );
 
   await logEvent(projectSlug, planId, {

@@ -1,12 +1,22 @@
+import path from "node:path";
 import { deleteFile, getPaths, listDirs, listFiles, readMarkdown, writeMarkdown } from "../vault/vault-io.js";
-import { ensureDir, fileExists } from "../vault/atomic-write.js";
+import { ensureDir, fileExists, moveFile, removeDir } from "../vault/atomic-write.js";
 import { localDateSlug, nowIso } from "../utils/time.js";
 import { planSlugFromTitle, taskIdFromIndex } from "../utils/slug.js";
 import { breakdownPlan } from "../utils/breakdown.js";
 import { PlanFrontmatter, PlanStatus } from "../schemas/plan.js";
 import { TaskFrontmatter } from "../schemas/task.js";
+import { ProjectFrontmatter } from "../schemas/project.js";
 import type { Config } from "../config.js";
+import { lookupBySlug } from "../vault/project-registry.js";
 import { logEvent } from "./audit.js";
+import {
+  planLinkLines,
+  projectLinkLines,
+  taskLink,
+  upsertManagedLinks,
+  upsertTaskLinks,
+} from "./obsidian-links.js";
 
 export interface CreatePlanInput {
   projectSlug: string;
@@ -71,7 +81,6 @@ export async function createPlan(input: CreatePlanInput, cfg: Config): Promise<C
 
   await ensureDir(paths.planDir(projectSlug, planId));
   await ensureDir(paths.tasksDir(projectSlug, planId));
-  await ensureDir(paths.sessionsDir(projectSlug, planId));
 
   const taskRefs: { id: string; title: string }[] = [];
   for (let i = 0; i < breakdown.tasks.length; i++) {
@@ -95,7 +104,10 @@ export async function createPlan(input: CreatePlanInput, cfg: Config): Promise<C
       review_verdict: "none",
       review_session: null,
     };
-    const taskBody = [`# ${t.title}`, "", t.content || "_No content provided._"].join("\n");
+    const taskBody = upsertTaskLinks(
+      [`# ${t.title}`, "", t.content || "_No content provided._"].join("\n"),
+      fm,
+    );
     await writeMarkdown(
       paths.taskFile(projectSlug, planId, taskId),
       fm as unknown as Record<string, unknown>,
@@ -105,7 +117,7 @@ export async function createPlan(input: CreatePlanInput, cfg: Config): Promise<C
   }
   const taskIds = taskRefs.map((t) => t.id);
 
-  const body = renderPlanBody({ title, taskRefs, warning: breakdown.warning });
+  const body = renderPlanBody({ plan: planFm, taskRefs, warning: breakdown.warning });
   await writeMarkdown(paths.planFile(projectSlug, planId), planFm as unknown as Record<string, unknown>, body);
 
   await logEvent(projectSlug, planId, {
@@ -114,6 +126,7 @@ export async function createPlan(input: CreatePlanInput, cfg: Config): Promise<C
     entityId: planId,
     payload: { title, taskCount: taskIds.length, strategy: breakdown.strategy },
   });
+  await syncProjectGraphLinks(projectSlug);
 
   return { plan: planFm, taskIds, strategy: breakdown.strategy, warning: breakdown.warning };
 }
@@ -137,13 +150,18 @@ export async function setPlanStatus(
     updated_at: nowIso(),
     version: parsed.data.version + 1,
   };
-  await writeMarkdown(planFile, next as unknown as Record<string, unknown>, parsed.content);
+  await writeMarkdown(
+    planFile,
+    next as unknown as Record<string, unknown>,
+    upsertManagedLinks(parsed.content, planLinkLines(next)),
+  );
   await logEvent(projectSlug, planId, {
     event: `plan.status.${status}`,
     entity: "plan",
     entityId: planId,
     payload: reason ? { reason } : {},
   });
+  await syncProjectGraphLinks(projectSlug);
 }
 
 export async function getPlanById(
@@ -217,22 +235,27 @@ export async function resolveTaskPlan(
 }
 
 export function renderPlanBody(args: {
-  title: string;
+  plan: PlanFrontmatter;
   taskRefs: { id: string; title: string }[];
   warning?: string | null;
   revisionNote?: string | null;
 }): string {
-  const lines: string[] = [`# ${args.title}`, ""];
+  const lines: string[] = [
+    upsertManagedLinks(`# ${args.plan.title}\n`, planLinkLines(args.plan)).trimEnd(),
+    "",
+  ];
   if (args.taskRefs.length === 0) {
     lines.push("_No tasks yet._");
   } else {
     lines.push(`Tasks (${args.taskRefs.length}):`);
     args.taskRefs.forEach((t, i) => {
-      lines.push(`${i + 1}. [[${t.id}]] — ${t.title}`);
+      lines.push(
+        `${i + 1}. ${taskLink(args.plan.project, args.plan.id, t.id, t.title)} - \`${t.id}\``,
+      );
     });
   }
   if (args.warning) {
-    lines.push("", `> ⚠️ ${args.warning}`);
+    lines.push("", `> Warning: ${args.warning}`);
   }
   if (args.revisionNote && args.revisionNote.trim().length > 0) {
     lines.push("", "## Revision note", "", args.revisionNote.trim());
@@ -290,7 +313,10 @@ export async function addTask(
     review_session: null,
   };
 
-  const taskBody = [`# ${input.title}`, "", input.content || "_No content provided._"].join("\n");
+  const taskBody = upsertTaskLinks(
+    [`# ${input.title}`, "", input.content || "_No content provided._"].join("\n"),
+    fm,
+  );
   await writeMarkdown(
     paths.taskFile(projectSlug, planId, taskId),
     fm as unknown as Record<string, unknown>,
@@ -306,7 +332,7 @@ export async function addTask(
       updated_at: now,
       version: planParsed.data.version + 1,
     };
-    const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+    const body = renderPlanBody({ plan: updatedPlanFm, taskRefs });
     await writeMarkdown(
       paths.planFile(projectSlug, planId),
       updatedPlanFm as unknown as Record<string, unknown>,
@@ -345,7 +371,7 @@ export async function deleteTask(
       updated_at: nowIso(),
       version: planParsed.data.version + 1,
     };
-    const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+    const body = renderPlanBody({ plan: updatedPlanFm, taskRefs });
     await writeMarkdown(
       paths.planFile(projectSlug, planId),
       updatedPlanFm as unknown as Record<string, unknown>,
@@ -414,7 +440,11 @@ export async function editTask(
     nextBody = parsed.content;
   }
 
-  await writeMarkdown(filePath, next as unknown as Record<string, unknown>, nextBody);
+  await writeMarkdown(
+    filePath,
+    next as unknown as Record<string, unknown>,
+    upsertTaskLinks(nextBody, next),
+  );
 
   // Rebuild plan TOC only when the display title changed
   if (titleChanged) {
@@ -426,7 +456,7 @@ export async function editTask(
         updated_at: now,
         version: planParsed.data.version + 1,
       };
-      const body = renderPlanBody({ title: planParsed.data.title, taskRefs });
+      const body = renderPlanBody({ plan: updatedPlanFm, taskRefs });
       await writeMarkdown(
         paths.planFile(projectSlug, planId),
         updatedPlanFm as unknown as Record<string, unknown>,
@@ -464,4 +494,128 @@ export async function listTaskRefs(
     refs.push({ id: parsed.data.id, title: parsed.data.title });
   }
   return refs;
+}
+
+export async function syncProjectGraphLinks(projectSlug: string): Promise<void> {
+  await migrateProjectGraphFile(projectSlug);
+
+  const entry = await lookupBySlug(projectSlug);
+  if (!entry) return;
+
+  const paths = getPaths();
+  const filePath = paths.projectFile(projectSlug);
+  const parsed = await readMarkdown<ProjectFrontmatter>(filePath);
+  const fm: ProjectFrontmatter =
+    parsed?.data ?? {
+      slug: entry.slug,
+      name: entry.slug,
+      path: entry.path,
+      created_at: entry.registeredAt,
+    };
+  const body =
+    parsed?.content ??
+    `# ${entry.slug}\n\n- Absolute path: \`${entry.path}\`\n- Registered: ${entry.registeredAt}\n\nPlans for this project live in the \`plans/\` folder next to this file.\n`;
+  const plans = await listPlans(projectSlug);
+
+  await writeMarkdown(
+    filePath,
+    fm as unknown as Record<string, unknown>,
+    upsertManagedLinks(body, projectLinkLines({ projectSlug, plans })),
+  );
+}
+
+export async function relinkProjectGraph(
+  projectSlug: string,
+  planId?: string,
+): Promise<{ plans: number; tasks: number }> {
+  await migrateProjectGraphFile(projectSlug);
+
+  const paths = getPaths();
+  const plans = planId
+    ? [await getPlanById(projectSlug, planId)].filter((p): p is PlanFrontmatter => p !== null)
+    : await listPlans(projectSlug);
+  if (planId && plans.length === 0) throw new Error(`Plan not found: ${planId}`);
+
+  let taskCount = 0;
+  for (const planRef of plans) {
+    await migratePlanGraphFile(projectSlug, planRef.id);
+    await removeLegacySessionsDir(projectSlug, planRef.id);
+
+    const parsedPlan = await readMarkdown<PlanFrontmatter>(
+      paths.planFile(projectSlug, planRef.id),
+    );
+    const plan = parsedPlan?.data ?? planRef;
+    const taskRefs = await listTaskRefs(projectSlug, plan.id);
+    await writeMarkdown(
+      paths.planFile(projectSlug, plan.id),
+      plan as unknown as Record<string, unknown>,
+      renderPlanBody({
+        plan,
+        taskRefs,
+        revisionNote: parsedPlan ? extractRevisionNote(parsedPlan.content) : null,
+      }),
+    );
+
+    const taskFiles = await listFiles(paths.tasksDir(projectSlug, plan.id), ".md");
+    for (const file of taskFiles) {
+      const taskId = file.replace(/\.md$/, "");
+      const parsed = await readMarkdown<TaskFrontmatter>(
+        paths.taskFile(projectSlug, plan.id, taskId),
+      );
+      if (!parsed) continue;
+      await writeMarkdown(
+        paths.taskFile(projectSlug, plan.id, taskId),
+        parsed.data as unknown as Record<string, unknown>,
+        upsertTaskLinks(parsed.content, parsed.data),
+      );
+      taskCount += 1;
+    }
+
+    await logEvent(projectSlug, plan.id, {
+      event: "plan.relinked",
+      entity: "plan",
+      entityId: plan.id,
+      payload: { taskCount: taskRefs.length },
+    });
+  }
+
+  await syncProjectGraphLinks(projectSlug);
+  return { plans: plans.length, tasks: taskCount };
+}
+
+function extractRevisionNote(body: string): string | null {
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === "## Revision note");
+  if (start === -1) return null;
+  const nextSection = lines.slice(start + 1).findIndex((line) => /^##\s+/.test(line));
+  const end = nextSection === -1 ? lines.length : start + 1 + nextSection;
+  const note = lines.slice(start + 1, end).join("\n").trim();
+  return note.length > 0 ? note : null;
+}
+
+async function migrateProjectGraphFile(projectSlug: string): Promise<void> {
+  const paths = getPaths();
+  await migrateFile(paths.legacyProjectFile(projectSlug), paths.projectFile(projectSlug));
+}
+
+async function migratePlanGraphFile(projectSlug: string, planId: string): Promise<void> {
+  const paths = getPaths();
+  await migrateFile(paths.legacyPlanFile(projectSlug, planId), paths.planFile(projectSlug, planId));
+}
+
+async function migrateFile(legacyPath: string, currentPath: string): Promise<void> {
+  const hasLegacy = await fileExists(legacyPath);
+  if (!hasLegacy) return;
+
+  if (!(await fileExists(currentPath))) {
+    await moveFile(legacyPath, currentPath);
+    return;
+  }
+
+  await deleteFile(legacyPath);
+}
+
+async function removeLegacySessionsDir(projectSlug: string, planId: string): Promise<void> {
+  const dir = path.join(getPaths().planDir(projectSlug, planId), "sessions");
+  await removeDir(dir);
 }

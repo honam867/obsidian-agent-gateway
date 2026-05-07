@@ -11,6 +11,7 @@ import { taskCompleteTool } from "./task-complete.js";
 import { taskGetTool } from "./task-get.js";
 import { taskListTool } from "./task-list.js";
 import { reviewSubmitTool } from "./review-submit.js";
+import { projectRelinkTool } from "./project-relink.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -28,5 +29,6 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     taskGetTool(ctx),
     taskListTool(ctx),
     reviewSubmitTool(ctx),
+    projectRelinkTool(ctx),
   ];
 }

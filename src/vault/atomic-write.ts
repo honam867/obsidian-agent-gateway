@@ -16,6 +16,15 @@ export async function appendLine(filePath: string, line: string): Promise<void> 
   await fs.appendFile(filePath, line.endsWith("\n") ? line : line + "\n", "utf8");
 }
 
+export async function moveFile(fromPath: string, toPath: string): Promise<void> {
+  await ensureDir(path.dirname(toPath));
+  await fs.rename(fromPath, toPath);
+}
+
+export async function removeDir(dir: string): Promise<void> {
+  await fs.rm(dir, { recursive: true, force: true });
+}
+
 export async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);

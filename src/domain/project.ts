@@ -9,6 +9,7 @@ import {
 import { projectSlugFromPath } from "../utils/slug.js";
 import { nowIso } from "../utils/time.js";
 import { ProjectFrontmatter } from "../schemas/project.js";
+import { projectLinkLines, upsertManagedLinks } from "./obsidian-links.js";
 
 export interface ResolvedProject {
   slug: string;
@@ -51,7 +52,10 @@ async function writeProjectDoc(entry: ProjectIndexEntry) {
     path: entry.path,
     created_at: entry.registeredAt,
   };
-  const body = `# ${entry.slug}\n\n- Absolute path: \`${entry.path}\`\n- Registered: ${entry.registeredAt}\n\nPlans for this project live in the \`plans/\` folder next to this file.\n`;
+  const body = upsertManagedLinks(
+    `# ${entry.slug}\n\n- Absolute path: \`${entry.path}\`\n- Registered: ${entry.registeredAt}\n\nPlans for this project live in the \`plans/\` folder next to this file.\n`,
+    projectLinkLines({ projectSlug: entry.slug, plans: [] }),
+  );
   await writeMarkdown(getPaths().projectFile(entry.slug), fm as unknown as Record<string, unknown>, body);
 }
 

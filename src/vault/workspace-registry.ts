@@ -51,8 +51,7 @@ export async function registerRepoEntry(
     git_remote: gitRemote,
     registered_at: new Date().toISOString(),
   };
-  idx.repos[slug] = entry;
-  await writeIndex(idx);
+  await writeIndex({ ...idx, repos: { ...idx.repos, [slug]: entry } });
   return entry;
 }
 
@@ -76,8 +75,7 @@ export async function listRepoEntries(): Promise<RepoEntry[]> {
 
 export async function upsertFeatureEntry(entry: FeatureEntry): Promise<FeatureEntry> {
   const idx = await readIndex();
-  idx.features[entry.slug] = entry;
-  await writeIndex(idx);
+  await writeIndex({ ...idx, features: { ...idx.features, [entry.slug]: entry } });
   return entry;
 }
 

@@ -14,13 +14,26 @@ export interface VaultPaths {
   legacyPlanFile(slug: string, planId: string): string;
   tasksDir(slug: string, planId: string): string;
   taskFile(slug: string, planId: string, taskId: string): string;
+  workspaceIndexFile: string;
+  featuresDir: string;
+  featureDir(slug: string): string;
+  featureFile(slug: string): string;
+  reposDir: string;
+  repoDir(slug: string): string;
+  repoFile(slug: string): string;
+  globalDir: string;
+  playbooksDir: string;
+  instinctsDir: string;
 }
 
 export function makeVaultPaths(vaultRoot: string): VaultPaths {
-  const root = path.resolve(vaultRoot);
+  const root = vaultRoot;
   const projectsDir = path.join(root, "projects");
   const indexDir = path.join(root, "_index");
   const indexFile = path.join(indexDir, "projects.json");
+  const featuresDir = path.join(root, "features");
+  const reposDir = path.join(root, "repos");
+  const globalDir = path.join(root, "global");
 
   return {
     root,
@@ -37,5 +50,15 @@ export function makeVaultPaths(vaultRoot: string): VaultPaths {
     tasksDir: (slug, planId) => path.join(projectsDir, slug, "plans", planId, "tasks"),
     taskFile: (slug, planId, taskId) =>
       path.join(projectsDir, slug, "plans", planId, "tasks", `${taskId}.md`),
+    workspaceIndexFile: path.join(indexDir, "workspace.json"),
+    featuresDir,
+    featureDir: (slug) => path.join(featuresDir, slug),
+    featureFile: (slug) => path.join(featuresDir, slug, "_feature.md"),
+    reposDir,
+    repoDir: (slug) => path.join(reposDir, slug),
+    repoFile: (slug) => path.join(reposDir, slug, "_repo.md"),
+    globalDir,
+    playbooksDir: path.join(globalDir, "playbooks"),
+    instinctsDir: path.join(globalDir, "instincts"),
   };
 }

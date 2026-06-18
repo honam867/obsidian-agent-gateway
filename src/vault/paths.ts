@@ -27,7 +27,7 @@ export interface VaultPaths {
 }
 
 export function makeVaultPaths(vaultRoot: string): VaultPaths {
-  const root = vaultRoot;
+  const root = path.resolve(vaultRoot);
   const projectsDir = path.join(root, "projects");
   const indexDir = path.join(root, "_index");
   const indexFile = path.join(indexDir, "projects.json");

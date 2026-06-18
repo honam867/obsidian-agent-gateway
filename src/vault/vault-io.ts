@@ -15,6 +15,16 @@ export async function initVault(vaultRoot: string): Promise<VaultPaths> {
   if (!(await fileExists(paths.indexFile))) {
     await writeAtomic(paths.indexFile, JSON.stringify({ projects: {} }, null, 2));
   }
+  await ensureDir(paths.featuresDir);
+  await ensureDir(paths.reposDir);
+  await ensureDir(paths.playbooksDir);
+  await ensureDir(paths.instinctsDir);
+  if (!(await fileExists(paths.workspaceIndexFile))) {
+    await writeAtomic(
+      paths.workspaceIndexFile,
+      JSON.stringify({ repos: {}, features: {} }, null, 2),
+    );
+  }
   // Drop a .obsidian marker so the folder can be opened as a vault out of the box.
   const dotObsidian = path.join(paths.root, ".obsidian");
   if (!(await fileExists(dotObsidian))) {

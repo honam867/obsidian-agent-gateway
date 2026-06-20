@@ -15,6 +15,8 @@ import { projectRelinkTool } from "./project-relink.js";
 import { contextSetTool } from "./context-set.js";
 import { progressUpdateTool } from "./progress-update.js";
 import { memoryRecallTool } from "./memory-recall.js";
+import { knowledgeSaveTool } from "./knowledge-save.js";
+import { instinctSaveTool } from "./instinct-save.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -36,5 +38,7 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     contextSetTool(ctx),
     progressUpdateTool(ctx),
     memoryRecallTool(ctx),
+    knowledgeSaveTool(ctx),
+    instinctSaveTool(ctx),
   ];
 }

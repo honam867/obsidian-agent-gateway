@@ -17,7 +17,7 @@ export function memoryRecallTool(_ctx: ToolContext): ToolDef {
       type: "object",
       properties: {
         feature: { type: "string", description: "Feature slug, e.g. 'misa-payout'." },
-        instinct_limit: { type: "number", description: "Max instincts to return (default 5)." },
+        instinct_limit: { type: "integer", minimum: 1, description: "Max instincts to return (default 5)." },
       },
       required: ["feature"],
     },

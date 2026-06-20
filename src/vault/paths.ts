@@ -24,6 +24,11 @@ export interface VaultPaths {
   globalDir: string;
   playbooksDir: string;
   instinctsDir: string;
+  featureWorkingDir(slug: string): string;
+  featureCurrentFile(slug: string): string;
+  repoKnowledgeDir(repo: string): string;
+  repoKnowledgeFile(repo: string, area: string): string;
+  instinctFile(slug: string): string;
 }
 
 export function makeVaultPaths(vaultRoot: string): VaultPaths {
@@ -60,5 +65,10 @@ export function makeVaultPaths(vaultRoot: string): VaultPaths {
     globalDir,
     playbooksDir: path.join(globalDir, "playbooks"),
     instinctsDir: path.join(globalDir, "instincts"),
+    featureWorkingDir: (slug) => path.join(featuresDir, slug, "working"),
+    featureCurrentFile: (slug) => path.join(featuresDir, slug, "working", "current.md"),
+    repoKnowledgeDir: (repo) => path.join(reposDir, repo, "knowledge"),
+    repoKnowledgeFile: (repo, area) => path.join(reposDir, repo, "knowledge", `${area}.md`),
+    instinctFile: (slug) => path.join(globalDir, "instincts", `${slug}.md`),
   };
 }

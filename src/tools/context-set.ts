@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { resolveFeature } from "../domain/feature.js";
+import { recordFeatureActivity } from "../domain/recency.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 const Input = z.object({
@@ -37,6 +38,7 @@ export function contextSetTool(_ctx: ToolContext): ToolDef {
         repos: input.repos,
         paths: input.paths,
       });
+      await recordFeatureActivity(feature.slug);
       return {
         status: "success",
         summary: `Active feature: ${feature.slug} (${feature.repos.length} repo(s))`,

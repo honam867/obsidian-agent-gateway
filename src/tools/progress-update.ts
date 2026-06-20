@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { writeProgress } from "../domain/working.js";
+import { recordFeatureActivity } from "../domain/recency.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 const Input = z.object({
@@ -40,6 +41,7 @@ export function progressUpdateTool(_ctx: ToolContext): ToolDef {
         activeTask: input.active_task,
         session: input.session,
       });
+      await recordFeatureActivity(progress.feature);
       return {
         status: "success",
         summary: `Progress saved for ${input.feature}`,

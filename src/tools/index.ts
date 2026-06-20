@@ -12,6 +12,9 @@ import { taskGetTool } from "./task-get.js";
 import { taskListTool } from "./task-list.js";
 import { reviewSubmitTool } from "./review-submit.js";
 import { projectRelinkTool } from "./project-relink.js";
+import { contextSetTool } from "./context-set.js";
+import { progressUpdateTool } from "./progress-update.js";
+import { memoryRecallTool } from "./memory-recall.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -30,5 +33,8 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     taskListTool(ctx),
     reviewSubmitTool(ctx),
     projectRelinkTool(ctx),
+    contextSetTool(ctx),
+    progressUpdateTool(ctx),
+    memoryRecallTool(ctx),
   ];
 }

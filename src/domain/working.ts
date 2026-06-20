@@ -1,5 +1,6 @@
 import { getPaths, readMarkdown, writeMarkdown } from "../vault/vault-io.js";
 import { nowIso } from "../utils/time.js";
+import { slugify } from "../utils/slug.js";
 
 export interface ProgressInput {
   feature: string;
@@ -19,8 +20,9 @@ export interface Progress {
 }
 
 export async function writeProgress(input: ProgressInput): Promise<Progress> {
+  const slug = slugify(input.feature) || "feature";
   const progress: Progress = {
-    feature: input.feature,
+    feature: slug,
     session: input.session ?? null,
     updated_at: nowIso(),
     active_task: input.activeTask ?? null,
@@ -36,7 +38,7 @@ export async function writeProgress(input: ProgressInput): Promise<Progress> {
     "",
   ].join("\n");
   await writeMarkdown(
-    getPaths().featureCurrentFile(input.feature),
+    getPaths().featureCurrentFile(slug),
     progress as unknown as Record<string, unknown>,
     body,
   );
@@ -44,6 +46,7 @@ export async function writeProgress(input: ProgressInput): Promise<Progress> {
 }
 
 export async function readProgress(feature: string): Promise<Progress | null> {
-  const parsed = await readMarkdown<Progress>(getPaths().featureCurrentFile(feature));
+  const slug = slugify(feature) || "feature";
+  const parsed = await readMarkdown<Progress>(getPaths().featureCurrentFile(slug));
   return parsed?.data ?? null;
 }

@@ -44,3 +44,11 @@ test("writeProgress overwrites and defaults optional fields to null", async () =
   const read = await readProgress("f1");
   assert.equal(read?.last_action, "a2");
 });
+
+test("writeProgress slugifies the feature so a slug read round-trips", async () => {
+  await freshVault();
+  await writeProgress({ feature: "MISA Payout", lastAction: "a", nextStep: "n" });
+  const read = await readProgress("misa-payout");
+  assert.equal(read?.last_action, "a");
+  assert.equal(read?.feature, "misa-payout");
+});

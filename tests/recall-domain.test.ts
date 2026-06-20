@@ -38,3 +38,12 @@ test("recall on unknown feature returns null feature but still global instincts"
   assert.deepEqual(bundle.knowledge, []);
   assert.equal(bundle.instincts.length, 1);
 });
+
+test("recall resolves a feature given a non-slug label", async () => {
+  await freshVault();
+  await resolveFeature({ slug: "misa-payout", title: "MISA Payout", repos: ["cozrum-server"] });
+  await writeProgress({ feature: "misa-payout", lastAction: "did X", nextStep: "do Y" });
+  const bundle = await recall("MISA Payout");
+  assert.equal(bundle.feature?.slug, "misa-payout");
+  assert.equal(bundle.progress?.last_action, "did X");
+});

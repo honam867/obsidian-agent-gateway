@@ -20,6 +20,9 @@ import { instinctSaveTool } from "./instinct-save.js";
 import { agentRecallTool } from "./agent-recall.js";
 import { lessonSaveTool } from "./lesson-save.js";
 import { lessonGetTool } from "./lesson-get.js";
+import { playbookSaveTool } from "./playbook-save.js";
+import { playbookGetTool } from "./playbook-get.js";
+import { memoryPromoteTool } from "./memory-promote.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -46,5 +49,8 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     agentRecallTool(ctx),
     lessonSaveTool(ctx),
     lessonGetTool(ctx),
+    playbookSaveTool(ctx),
+    playbookGetTool(ctx),
+    memoryPromoteTool(ctx),
   ];
 }

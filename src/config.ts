@@ -13,6 +13,7 @@ export interface Config {
     small: number;
     large: number;
   };
+  learnThreshold?: number;
 }
 
 const DEFAULT_VAULT_WIN = "D:\\working\\AgentGateway";
@@ -34,6 +35,9 @@ export function loadConfig(): Config {
   const small = Number(process.env.AGENT_GATEWAY_BREAKDOWN_SMALL ?? 800);
   const large = Number(process.env.AGENT_GATEWAY_BREAKDOWN_LARGE ?? 2000);
 
+  const thresholdRaw = Number(process.env.AGENT_GATEWAY_LEARN_THRESHOLD ?? 2);
+  const learnThreshold = Number.isInteger(thresholdRaw) && thresholdRaw > 0 ? thresholdRaw : 2;
+
   return {
     vaultPath: path.resolve(vaultPath),
     logLevel,
@@ -43,5 +47,6 @@ export function loadConfig(): Config {
       port: httpPort,
     },
     breakdown: { small, large },
+    learnThreshold,
   };
 }

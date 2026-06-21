@@ -18,6 +18,8 @@ import { memoryRecallTool } from "./memory-recall.js";
 import { knowledgeSaveTool } from "./knowledge-save.js";
 import { instinctSaveTool } from "./instinct-save.js";
 import { agentRecallTool } from "./agent-recall.js";
+import { lessonSaveTool } from "./lesson-save.js";
+import { lessonGetTool } from "./lesson-get.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -42,5 +44,7 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     knowledgeSaveTool(ctx),
     instinctSaveTool(ctx),
     agentRecallTool(ctx),
+    lessonSaveTool(ctx),
+    lessonGetTool(ctx),
   ];
 }

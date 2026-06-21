@@ -27,5 +27,15 @@ work survives across sessions and CLIs. Keep it low-noise: only act at the momen
 - Recall repeatedly within a session.
 - Invent feature slugs — let `agent_recall` resolve them.
 
+## SELF-LEARN — per-repo lessons & playbooks (auto + proactive)
+- After you FIX a repo-specific bug/incident → `lesson_save(repo, slug, symptom, cause, fix)` (AUTO, no need to ask).
+- When `lesson_save` (or your own judgement) signals a pattern recurred, OR the user mentions a method/
+  pattern is reusable → ASK the user, then `playbook_save(repo, slug, title, steps)` so it can be repeated
+  exactly next time without re-describing it.
+- When a repo lesson clearly applies across repos → ASK the user, then `memory_promote(repo, lesson_slug)`
+  to make it a global instinct.
+- At session start, READ the lessons + playbooks that `agent_recall` loaded for the repo, and APPLY them —
+  skip a known error straight to its fix, and follow a known playbook — before re-discovering anything.
+
 ## The test for saving
 Save something only if the NEXT session would need it to continue.

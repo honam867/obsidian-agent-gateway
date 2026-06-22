@@ -23,6 +23,10 @@ import { lessonGetTool } from "./lesson-get.js";
 import { playbookSaveTool } from "./playbook-save.js";
 import { playbookGetTool } from "./playbook-get.js";
 import { memoryPromoteTool } from "./memory-promote.js";
+import { reviewOpenTool } from "./review-open.js";
+import { reviewNoteTool } from "./review-note.js";
+import { reviewGetTool } from "./review-get.js";
+import { reviewApproveTool } from "./review-approve.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -52,5 +56,9 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     playbookSaveTool(ctx),
     playbookGetTool(ctx),
     memoryPromoteTool(ctx),
+    reviewOpenTool(ctx),
+    reviewNoteTool(ctx),
+    reviewGetTool(ctx),
+    reviewApproveTool(ctx),
   ];
 }

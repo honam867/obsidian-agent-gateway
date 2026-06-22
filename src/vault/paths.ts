@@ -33,6 +33,8 @@ export interface VaultPaths {
   repoLessonFile(repo: string, slug: string): string;
   repoPlaybooksDir(repo: string): string;
   repoPlaybookFile(repo: string, slug: string): string;
+  featureReviewsDir(feature: string): string;
+  featureReviewFile(feature: string, kind: string, slug: string): string;
 }
 
 export function makeVaultPaths(vaultRoot: string): VaultPaths {
@@ -78,5 +80,8 @@ export function makeVaultPaths(vaultRoot: string): VaultPaths {
     repoLessonFile: (repo, slug) => path.join(reposDir, repo, "lessons", `${slug}.md`),
     repoPlaybooksDir: (repo) => path.join(reposDir, repo, "playbooks"),
     repoPlaybookFile: (repo, slug) => path.join(reposDir, repo, "playbooks", `${slug}.md`),
+    featureReviewsDir: (feature) => path.join(featuresDir, feature, "reviews"),
+    featureReviewFile: (feature, kind, slug) =>
+      path.join(featuresDir, feature, "reviews", `${kind}-${slug}.md`),
   };
 }

@@ -27,6 +27,7 @@ import { reviewOpenTool } from "./review-open.js";
 import { reviewNoteTool } from "./review-note.js";
 import { reviewGetTool } from "./review-get.js";
 import { reviewApproveTool } from "./review-approve.js";
+import { reviewListTool } from "./review-list.js";
 import type { ToolContext, ToolDef } from "./types.js";
 
 export function registerTools(ctx: ToolContext): ToolDef[] {
@@ -60,5 +61,6 @@ export function registerTools(ctx: ToolContext): ToolDef[] {
     reviewNoteTool(ctx),
     reviewGetTool(ctx),
     reviewApproveTool(ctx),
+    reviewListTool(ctx),
   ];
 }

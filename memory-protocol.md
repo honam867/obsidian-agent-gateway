@@ -37,5 +37,15 @@ work survives across sessions and CLIs. Keep it low-noise: only act at the momen
 - At session start, READ the lessons + playbooks that `agent_recall` loaded for the repo, and APPLY them —
   skip a known error straight to its fix, and follow a known playbook — before re-discovering anything.
 
+## REVIEW HANDOFF — spec/plan review across CLIs
+- After you produce a spec/plan (e.g. via /brainstorming) → `review_open(feature, kind, path)` (state: reviewing).
+- When the user asks "which spec/plan needs review?" → `review_list("reviewing")` and show them; you do NOT
+  need a path — it comes from the record.
+- When asked to review a pending item → read the document at its `path`, then `review_note(feature, kind, feedback)`
+  (overwrites the previous feedback — latest only).
+- When resuming a spec/plan under review → `review_get(feature, kind)` to read the latest feedback before revising.
+- When the user accepts → `review_approve(feature, kind)`.
+- Never copy the path or the feedback by hand — they live in the vault; read/write them through these tools.
+
 ## The test for saving
 Save something only if the NEXT session would need it to continue.

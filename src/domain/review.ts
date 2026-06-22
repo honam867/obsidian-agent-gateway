@@ -101,9 +101,9 @@ export async function approveReview(
   return writeRecord(fm, feedback);
 }
 
-async function listFeatureReviews(feature: string): Promise<ReviewPointer[]> {
+async function listFeatureReviews(feature: string): Promise<Array<ReviewPointer & { updated_at: string }>> {
   const files = await listFiles(getPaths().featureReviewsDir(feature), ".md");
-  const out: ReviewPointer[] = [];
+  const out: Array<ReviewPointer & { updated_at: string }> = [];
   for (const file of files) {
     const parsed = await readMarkdown<ReviewFm>(
       path.join(getPaths().featureReviewsDir(feature), file),
@@ -115,6 +115,7 @@ async function listFeatureReviews(feature: string): Promise<ReviewPointer[]> {
       slug: parsed.data.slug,
       path: parsed.data.path,
       state: parsed.data.state,
+      updated_at: parsed.data.updated_at,
     });
   }
   return out;
@@ -125,7 +126,7 @@ export async function resolveReviewSlug(
   kind: ReviewKind,
   slug?: string,
 ): Promise<string | null> {
-  if (slug) {
+  if (slug !== undefined && slug !== "") {
     const exists = await readMarkdown<ReviewFm>(getPaths().featureReviewFile(feature, kind, slug));
     return exists ? slug : null;
   }
@@ -135,11 +136,12 @@ export async function resolveReviewSlug(
 
 export async function listReviews(state?: ReviewState): Promise<ReviewPointer[]> {
   const features = await listDirs(getPaths().featuresDir);
-  const out: ReviewPointer[] = [];
+  const out: Array<ReviewPointer & { updated_at: string }> = [];
   for (const feature of features) {
     for (const r of await listFeatureReviews(feature)) {
       if (!state || r.state === state) out.push(r);
     }
   }
-  return out;
+  out.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  return out.map(({ updated_at, ...rest }) => rest);
 }

@@ -72,3 +72,13 @@ test("listReviews scans all features and filters by state", async () => {
   const all = await listReviews();
   assert.equal(all.length, 2);
 });
+
+test("listReviews sorts by updated_at desc", async () => {
+  await freshVault();
+  await openReview({ feature: "fa", kind: "spec", path: "D:/x/older.md" });
+  await new Promise((r) => setTimeout(r, 10));
+  await openReview({ feature: "fb", kind: "spec", path: "D:/x/newer.md" });
+  const all = await listReviews();
+  assert.equal(all[0].feature, "fb"); // most recent first
+  assert.equal(all[1].feature, "fa");
+});

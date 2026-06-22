@@ -1,117 +1,94 @@
-# AGENTS.md — guidance for any non-Claude coding agent
+# AGENTS.md — guidance for any coding agent (Codex, OpenCode, Cursor, …)
 
-This file tells an agent (Codex CLI, OpenCode, Cursor, …) **how to behave inside a project that
-uses `obsidian-agent-gateway` as its coordination layer**. Follow this whenever a user asks you
-to "work on a task", "check what's open", "pick up from where we left off", etc.
+This file tells an agent how to behave inside a workspace that uses `obsidian-agent-gateway` as its
+shared memory + coordination layer. It applies to **any** CLI — the vault is the common brain, not
+tied to one tool.
 
-> **TL;DR** — call `agent_boot` once at the start of every session, act on what it returns, and
-> do not touch tasks the user has not explicitly referenced.
+> **First time on this machine?** The server may not be installed yet. See [`SETUP.md`](./SETUP.md)
+> for the one-time install + wiring runbook.
+>
+> **Canonical behaviour contract:** [`memory-protocol.md`](./memory-protocol.md). This file is a
+> role-oriented summary; if they ever disagree, `memory-protocol.md` wins.
 
 ---
 
 ## 1. Your role
 
-- The user collaborates with **multiple CLIs** via the same Obsidian vault.
-- The **planner** role (usually Claude Code) creates the plan and tasks.
-- **Your job** is to be a competent **coder**. You may also act as a reviewer if the user asks.
-- You do NOT decide when a task is "done" — the user does, via `/obsidian-plan-done`. Do not
-  call `task_complete` on your own initiative.
+- The user works across **multiple CLIs** sharing **one Obsidian vault**. There is no "main" CLI —
+  whichever one is open reads and writes the same brain.
+- You are a competent **coder**, and a **reviewer** when asked. Memory/review is automatic, low-noise:
+  act only at the moments in §2–§4, never on every message.
+- The **user** decides when something is truly done. Don't mark work complete on your own initiative.
 
 ---
 
-## 2. First action in every session
+## 2. First action in every session (LOAD)
 
-Always call the MCP tool `agent_boot` on the `obsidian-agent-gateway` server, passing:
-- `cwd`: the absolute working directory
-- `agent`: `{ cli: "<your-cli-name>", session: "<stable-session-id>", role: "coder" }`
+Call **`agent_recall`** once, passing your absolute `cwd`. It resolves the repo + the feature you last
+worked on and returns last action, next step, knowledge pointers, and top instincts/lessons/playbooks.
 
-Cache the response for ~5 minutes — the `cache_until` field tells you when it expires. Do not
-call `agent_boot` again within that window unless the user triggers `/obsidian-plan-status` or
-you observe a write to the vault.
+- Call it **once per session** and reuse the result. Don't re-recall unless the feature changes.
+- You do **not** need to know the feature slug — `agent_recall` resolves it from `cwd`.
+- When the user says *"what was I doing / continue / where did I leave off / which repo"* → this is the call.
+- On a brand-new machine it returns `how: "none"` (no history yet) — that's normal.
 
-The response contains everything you need:
-- `project` — slug, path, name
-- `active_plan` — id, title, task counts
-- `open_tasks`, `in_progress_tasks`, `stale_tasks`, `my_active_tasks`
-- `recent_activity` — today's updates
-- `hints` — a short list of one-liners meant to be shown to the user
-
-If `active_plan` is `null`, tell the user there's no active plan and suggest they ask the
-planner to create one.
+**Then apply what it loaded:** read the repo lessons + playbooks it returns and use them — skip a known
+error straight to its fix, follow a known playbook — before re-discovering anything.
 
 ---
 
-## 3. Tool-calling rules
+## 3. Saving — at meaningful boundaries only (SAVE)
 
-| Rule | Why |
+Save incrementally at each boundary; don't wait for the end (the session may stop first).
+
+| Call | When |
 |---|---|
-| Call **`agent_boot` exactly once per session** at start (or on explicit `/obsidian-plan-status`). | Minimises round-trips; the response is a superset of what the other read tools return. |
-| Call `task_get` **only** when you need the full body (acceptance criteria, notes) of a specific task that wasn't in the boot summary. | Avoid duplicate reads — the boot response already has frontmatter. |
-| Call `task_update` when the user explicitly tells you to start / block / unblock / note. | Never mutate state based on vibes. |
-| Call `task_complete` **only via `/obsidian-plan-done`**. | The user's slash command is their explicit intent. |
-| Call `plan_create` only when the user is the planner and just finished discussing a plan. | Creating a plan archives the previous active one — don't do it accidentally. |
+| `progress_update(feature, last_action, next_step)` | A meaningful step completes, you switch tasks, or you wrap up. |
+| `context_set(feature, repos, paths)` | The user clearly moves to a different feature/initiative (short kebab-case label, list every repo it spans). |
+| `knowledge_save(repo, area, body, source_paths)` | You learn a durable codebase fact (architecture, convention, gotcha, run/test command). |
+| `lesson_save(repo, slug, symptom, cause, fix)` | **After you fix a repo-specific bug/incident — automatic, no need to ask.** |
+| `instinct_save(slug, title, trigger, action, why)` | You hit friction and found a better way to *work* (re-saving the same slug reinforces it). |
 
-If a tool returns `session_warning`, surface it to the user verbatim and ask whether to proceed
-with the takeover.
+The test for saving: **save only if the next session would need it to continue.** Never save trivial
+facts, raw tool output, secrets, or on every message.
+
+### Proactive promotion (ask first)
+- A pattern recurred or the user calls a method reusable → ask, then `playbook_save(repo, slug, title, steps)`.
+- A repo lesson clearly applies across repos → ask, then `memory_promote(repo, lesson_slug)` (lesson → global instinct).
 
 ---
 
-## 4. When the user asks something vague
+## 4. Review handoff — spec/plan review across CLIs
 
-| User says | You do |
+The vault is the middle layer so two CLIs ping-pong a review **without copy-pasting paths or feedback**.
+
+| Call | Who / when |
 |---|---|
-| "What are we working on?" | Summarise `agent_boot` — active plan + open & in-progress tasks. |
-| "Continue." | Look at `in_progress_tasks`. If exactly one is yours, resume it. Otherwise ask which. |
-| "Check if anything's stale." | Look at `stale_tasks` in the boot response. |
-| "Done with this." | Do NOT auto-call `task_complete`. Tell the user to run `/obsidian-plan-done`. |
-| "Start task 003." | Run `/obsidian-plan-start 003-...` flow: `task_update` to `in_progress`, then `task_get` for the body. |
+| `review_open(feature, kind, path)` | Author CLI, after producing a spec/plan (e.g. via brainstorming). State → `reviewing`. |
+| `review_list("reviewing")` | Reviewer CLI asked *"which spec/plan needs review?"* — returns the path; you never copy it. |
+| `review_note(feature, kind, feedback)` | Reviewer, after reading the doc at its `path`. **Overwrites** previous feedback (latest only). |
+| `review_get(feature, kind)` | Author, to read the latest feedback before revising. |
+| `review_approve(feature, kind)` | When the **user** accepts. State `reviewing` → `approved`. |
+
+The **spec/plan file itself is edited in the repo by the agent** — the vault only stores the review +
+state. One record per feature/kind; notes overwrite, no new file per round.
 
 ---
 
 ## 5. What NOT to do
 
-- Do not call `agent_boot` multiple times per session.
-- Do not mutate tasks that the user didn't reference. If a task is already `in_progress` by
-  another session, read it but don't change it without user confirmation.
-- Do not write files directly to the vault. All changes go through MCP tools.
-- Do not invent task ids. If the user is ambiguous, call `agent_boot` and ask them to pick.
-- Do not call `plan_revise` or `plan_archive` unless the user asks explicitly — those are
-  disruptive to other CLIs.
-- Do not mark a task `done` just because tests pass. The user decides.
+- Don't recall repeatedly within a session, or save on every message.
+- Don't invent feature slugs — let `agent_recall` / the user supply them.
+- Don't copy review paths or feedback by hand — read/write them through the review tools.
+- Don't mark work done just because tests pass — the user decides.
+- Writes are atomic at the file level; there is no lock. If you see another session's in-progress
+  state, surface it to the user rather than clobbering it.
 
 ---
 
-## 6. Slash commands the user will type
+## 6. Legacy plan/task tools (still available)
 
-The user's slash commands map to MCP tools 1:1:
-
-- `/obsidian-plan-status` → `agent_boot`
-- `/obsidian-plan-create <title>` → `plan_create`
-- `/obsidian-plan-list [status]` → `plan_list`
-- `/obsidian-plan-start <task-id>` → `task_update(status=in_progress)`
-- `/obsidian-plan-done [task-id] [summary]` → `task_complete`
-- `/obsidian-plan-block <task-id> <reason>` → `task_update(status=blocked)`
-- `/obsidian-plan-unblock <task-id>` → `task_update(status=in_progress)`
-- `/obsidian-plan-note <task-id> <note>` → `task_update(note=…)`
-
-If these aren't installed for your CLI, `slash-commands/` has install instructions.
-
----
-
-## 7. Concurrency model — what to assume
-
-- There is **no lease, no lock**. Multiple CLIs can read / write simultaneously.
-- Writes are **atomic at the file level** (tmp + rename).
-- Every task has a `version` field (optimistic concurrency). Pass `expected_version` on
-  `task_update` if you want to detect a clobber.
-- The `session` field in task frontmatter is a hint, not a mutex. If you see a different
-  session, warn the user.
-
----
-
-## 8. Graph-friendly vault notes
-
-The vault is optimized for Obsidian graph view. Project and plan notes use meaningful filenames
-(`<project-slug>.md`, `<plan-id>.md`) so nodes are identifiable, and managed wikilink blocks are
-maintained by the MCP server. Do not hand-edit those managed blocks; use `project_relink` if graph
-links need to be rebuilt.
+An older structured plan/task layer (`agent_boot`, `plan_create`, `task_*`, `review_submit`,
+`project_relink`) is still registered for backward compatibility. The memory layer above (feature +
+working memory) is the current default for tracking "what I'm doing / where I stopped". Use the legacy
+plan/task tools only if the user explicitly works with them.

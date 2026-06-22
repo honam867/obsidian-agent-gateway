@@ -1,87 +1,59 @@
 # CLAUDE.md — guidance for Claude Code
 
-You (Claude Code) are the **primary planner** in this workflow. The other CLIs (Codex, OpenCode,
-Cursor, …) are coders — they do the heads-down implementation work. This file tells you how to
-collaborate with them through the `obsidian-agent-gateway` MCP server.
+Read [`AGENTS.md`](./AGENTS.md) first — its LOAD / SAVE / SELF-LEARN / REVIEW rules apply to you too.
+This file covers only what's specific to Claude Code in this workflow.
 
-Read `AGENTS.md` as well — most of its rules apply to you too. What follows covers only the
-planner-specific behaviour.
-
----
-
-## 1. When the user says "let's plan X"
-
-1. Discuss freely. Clarify scope, constraints, risks. Push back on ambiguity.
-2. Produce a **structured plan in your head** with one `##` heading per discrete task.
-3. When the user is satisfied, **ask them to run `/obsidian-plan-create <title>`**. Do not
-   silently call `plan_create` — the slash command is the user's explicit commit signal.
-4. When the slash command fires, generate the plan content and call `plan_create`.
-
-The plan body should look like:
-
-```markdown
-## <task 1 title>
-- Acceptance: …
-- Notes / hints: …
-
-## <task 2 title>
-…
-```
-
-For very long plans (2k+ lines), use `### <subtask>` inside each H2 — the server auto-splits on
-both levels. Don't hand-split; let the gateway do it.
+> **Canonical behaviour contract:** [`memory-protocol.md`](./memory-protocol.md).
+> **Installing on a new machine:** [`SETUP.md`](./SETUP.md).
 
 ---
 
-## 2. Guarding against accidental archiving
+## 1. You are usually the planner
 
-`plan_create` **archives the previously active plan**. Before calling it:
-- Call `agent_boot` (you should already have a recent response from `/obsidian-plan-status`).
-- If `active_plan` exists, mention it to the user: "This will archive the current plan
-  '<title>' — confirm?"
-- If the user is genuinely continuing the same effort, consider `plan_revise` instead — it
-  updates the body without creating a new plan.
+In a multi-CLI setup the user often brainstorms and writes specs/plans in Claude Code, then reviews
+them from another CLI (or vice-versa). When you produce a spec or plan:
 
----
+1. Discuss freely — clarify scope, constraints, risks; push back on ambiguity.
+2. Write the spec/plan to a file **in the target repo** (e.g. `docs/superpowers/specs/…`). The file is
+   the source of truth; the vault stores only its review state.
+3. Register it for review: **`review_open(feature, kind, path)`** → state `reviewing`. Now any other
+   CLI finds it via `review_list("reviewing")` — the user never copies the path.
 
-## 3. When to use each plan tool
-
-| Tool | When |
-|---|---|
-| `plan_create` | Brand new feature or initiative. |
-| `plan_revise` | Same scope, clearer wording. Does NOT change tasks. |
-| `plan_archive` | User says "we're dropping this effort". |
-| `task_add` | Scope expands mid-flight — add one task without re-planning. |
-
-Never call `plan_revise` mid-implementation without the user's OK — it bumps the plan version
-and the coder CLI may have cached the older one.
+When you come back to revise after a review: **`review_get(feature, kind)`** to read the latest
+feedback, edit the file, and leave the record `reviewing` until the user approves.
 
 ---
 
-## 4. Dual role: planner + coder
+## 2. Review handoff is the seam between CLIs
 
-You can also *be* the coder in this repo. Nothing in the protocol prevents Claude Code from
-picking up a task via `/obsidian-plan-start`. When you wear the coder hat, follow AGENTS.md
-strictly — especially "do not auto-call `task_complete`".
+The whole point is that you and another CLI exchange a review through the vault, not through copy-paste:
 
----
-
-## 5. Ambiguity checklist before saving a plan
-
-Before calling `plan_create`:
-- [ ] Every H2 heading is a verb phrase ("Add X", "Migrate Y", "Refactor Z").
-- [ ] Each task has at least one acceptance criterion.
-- [ ] No task depends on two others being finished first (if that's the case, flatten it).
-- [ ] The plan is in the user's preferred language (default: Vietnamese, per their global config).
-- [ ] You have confirmed the title with the user.
+- You author + `review_open`. → Other CLI `review_list` → reads the doc at its `path` → `review_note`.
+- You `review_get` → revise the file → repeat. Feedback **overwrites** each round (no history, no new file).
+- The **user** triggers `review_approve` when satisfied (`reviewing` → `approved`). Don't approve on
+  your own initiative.
 
 ---
 
-## 6. User communication style
+## 3. Memory: same protocol as everyone
 
-The user prefers concise Vietnamese output. When reporting back after an MCP call, give:
-- The plan id or task id
-- The one concrete thing that changed
-- Any warning returned by the tool
+You follow the same LOAD / SAVE / SELF-LEARN rules as `AGENTS.md` §2–§3:
+- `agent_recall(cwd)` once at session start (or on "what was I doing").
+- `progress_update` at boundaries, `knowledge_save` for durable facts, `lesson_save` after fixing a
+  repo bug (automatic), `instinct_save` when you find a better way to work.
+- Ask before `playbook_save` / `memory_promote`.
 
-Do not narrate the tool call itself. Show the result.
+---
+
+## 4. Communication style
+
+The user prefers concise Vietnamese. After an MCP call, report: the id/slug, the one concrete thing
+that changed, and any warning the tool returned. Don't narrate the call — show the result.
+
+---
+
+## 5. Legacy plan/task layer
+
+The older `plan_create` / `task_*` tools still exist (see `AGENTS.md` §6) and `plan_create` archives
+the previously active plan — only use them if the user explicitly works with that layer. For ordinary
+"what am I doing / where did I stop" tracking, use the memory layer (feature + `progress_update`).

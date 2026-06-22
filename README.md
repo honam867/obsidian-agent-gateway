@@ -11,6 +11,11 @@ across every CLI.
 > 2. **A self-learning harness** — the agent accumulates codebase knowledge, per-repo lessons,
 >    reusable playbooks, and global "instincts", and gets more useful over time.
 
+> **New machine?** Clone this repo, `cd` in, and tell your agent: *"read SETUP.md and set it up"*.
+> [`SETUP.md`](./SETUP.md) is an agent-executable runbook (build → register MCP into your CLIs →
+> install the protocol → verify) with no hardcoded paths. §3–5 below are the same steps for doing it
+> by hand. Agent behaviour contract: [`memory-protocol.md`](./memory-protocol.md).
+
 > **Roles in the workflow** (plan/task layer)
 > - **Planner** — usually Claude Code. Discusses with the user, commits a plan with `/obsidian-plan-create`.
 > - **Coder** — any CLI. Reads the active plan, picks a task, implements it.
